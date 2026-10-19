@@ -1,0 +1,61 @@
+{
+    "name": "solomon-ochepa/laravel-module-test",
+    "description": "Run a nwidart/laravel-modules suite a module at a time, with coverage scoped to each module, per-module floors and an exportable scoreboard.",
+    "keywords": ["laravel", "laravel-modules", "nwidart", "pest", "coverage", "testing"],
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Solomon Ochepa",
+            "email": "solomonochepa@gmail.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "ext-simplexml": "*",
+        "illuminate/console": "^12.0 || ^13.0",
+        "illuminate/process": "^12.0 || ^13.0",
+        "illuminate/support": "^12.0 || ^13.0",
+        "nunomaduro/termwind": "^2.0",
+        "nwidart/laravel-modules": "^12.0 || ^13.0"
+    },
+    "suggest": {
+        "ext-gd": "To export the scoreboard as PNG or JPEG."
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0 || ^11.0",
+        "pestphp/pest": "^4.0",
+        "phpstan/phpstan": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "SolomonOchepa\\ModuleTest\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SolomonOchepa\\ModuleTest\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "SolomonOchepa\\ModuleTest\\ModuleTestServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "analyse": "phpstan analyse --memory-limit=1G"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "wikimedia/composer-merge-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
