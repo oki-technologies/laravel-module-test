@@ -1,6 +1,6 @@
 <?php
 
-namespace SolomonOchepa\ModuleTest\Console;
+namespace Oki\ModuleTest\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
@@ -9,8 +9,8 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use LogicException;
 use Nwidart\Modules\Facades\Module;
-use SolomonOchepa\ModuleTest\Support\ScopedCoverageReport;
-use SolomonOchepa\ModuleTest\Support\ScoreboardExport;
+use Oki\ModuleTest\Support\ScopedCoverageReport;
+use Oki\ModuleTest\Support\ScoreboardExport;
 
 class ModuleTestCommand extends Command
 {

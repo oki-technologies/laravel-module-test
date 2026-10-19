@@ -1,6 +1,6 @@
 <?php
 
-use SolomonOchepa\ModuleTest\Support\ScoreboardExport;
+use Oki\ModuleTest\Support\ScoreboardExport;
 
 /*
 | The export is the scoreboard kept rather than drawn, so everything below

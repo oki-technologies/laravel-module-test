@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace SolomonOchepa\ModuleTest;
+namespace Oki\ModuleTest;
 
 use Illuminate\Support\ServiceProvider;
-use SolomonOchepa\ModuleTest\Console\ModuleTestCommand;
+use Oki\ModuleTest\Console\ModuleTestCommand;
 
 /** Puts `module:test` on `php artisan`. Nothing else. */
 final class ModuleTestServiceProvider extends ServiceProvider

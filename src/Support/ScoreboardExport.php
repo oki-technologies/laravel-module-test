@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace SolomonOchepa\ModuleTest\Support;
+namespace Oki\ModuleTest\Support;
 
 use Illuminate\Support\Str;
 use InvalidArgumentException;

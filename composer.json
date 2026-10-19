@@ -1,5 +1,5 @@
 {
-    "name": "solomon-ochepa/laravel-module-test",
+    "name": "oki-technologies/laravel-module-test",
     "description": "Run a nwidart/laravel-modules suite a module at a time, with coverage scoped to each module, per-module floors and an exportable scoreboard.",
     "keywords": ["laravel", "laravel-modules", "nwidart", "pest", "coverage", "testing"],
     "type": "library",
@@ -30,18 +30,18 @@
     },
     "autoload": {
         "psr-4": {
-            "SolomonOchepa\\ModuleTest\\": "src/"
+            "Oki\\ModuleTest\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "SolomonOchepa\\ModuleTest\\Tests\\": "tests/"
+            "Oki\\ModuleTest\\Tests\\": "tests/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "SolomonOchepa\\ModuleTest\\ModuleTestServiceProvider"
+                "Oki\\ModuleTest\\ModuleTestServiceProvider"
             ]
         }
     },

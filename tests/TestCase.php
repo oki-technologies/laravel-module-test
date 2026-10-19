@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace SolomonOchepa\ModuleTest\Tests;
+namespace Oki\ModuleTest\Tests;
 
 use Illuminate\Support\Facades\File;
 use Nwidart\Modules\LaravelModulesServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
-use SolomonOchepa\ModuleTest\ModuleTestServiceProvider;
+use Oki\ModuleTest\ModuleTestServiceProvider;
 
 abstract class TestCase extends Orchestra
 {

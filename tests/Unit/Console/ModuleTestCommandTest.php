@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Nwidart\Modules\Facades\Module;
 use Nwidart\Modules\Laravel\Module as NwidartModule;
-use SolomonOchepa\ModuleTest\Console\ModuleTestCommand;
-use SolomonOchepa\ModuleTest\Support\ScopedCoverageReport;
+use Oki\ModuleTest\Console\ModuleTestCommand;
+use Oki\ModuleTest\Support\ScopedCoverageReport;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\OutputInterface;
 

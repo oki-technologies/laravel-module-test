@@ -5,7 +5,7 @@ application's suite a module at a time, with coverage scoped to each module, a f
 module, and a scoreboard you can export.
 
 ```bash
-composer require --dev solomon-ochepa/laravel-module-test
+composer require --dev oki-technologies/laravel-module-test
 ```
 
 The service provider is discovered. Pest 4, Laravel 12 or 13, PHP 8.3+, and a coverage

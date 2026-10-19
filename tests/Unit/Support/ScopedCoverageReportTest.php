@@ -1,6 +1,6 @@
 <?php
 
-use SolomonOchepa\ModuleTest\Support\ScopedCoverageReport;
+use Oki\ModuleTest\Support\ScopedCoverageReport;
 
 /*
 | The report is read from Clover rather than from what the child printed, so
