@@ -296,8 +296,9 @@ back at the end, see above), and each module gets one row:
 its name, its score, the floor beside it where there is one, and how long it took. The row
 goes up the moment the module is picked up — `running 12s`, redrawn in place — so a run over
 every module says which one is being read now rather than going quiet for an hour. Piped to
-a file, a log or an agent, where a written line cannot be taken back, the row is written once,
-when it has something to say.
+a file, a log or a CI job, where a written line cannot be taken back, the `running` row is
+written once as the module starts and the score follows on a line of its own — otherwise the
+log says nothing while a module runs, and its time reads as the module before it.
 
 ### Keeping it
 

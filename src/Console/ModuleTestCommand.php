@@ -465,12 +465,16 @@ class ModuleTestCommand extends Command
                 // redrawn in place as it goes. A run over every module is an
                 // hour of silence otherwise, and the reader wants to know
                 // which one is being read now, not only which are finished.
+                // Where the line cannot be taken back it still goes up, once,
+                // and the score follows on a line of its own: a log that says
+                // nothing until a module ends charges its whole time to the
+                // module before it.
                 $drawn = false;
                 $ticked = 0.0;
 
-                if ($scoreboard && $this->redraws()) {
+                if ($scoreboard) {
                     $this->output->write(ScopedCoverageReport::renderPending($label, $counted));
-                    $drawn = true;
+                    $drawn = $this->redraws();
                 }
 
                 $spoke = '';
