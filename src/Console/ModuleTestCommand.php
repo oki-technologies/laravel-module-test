@@ -5,12 +5,13 @@ namespace Oki\ModuleTest\Console;
 use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
-use LogicException;
 use Nwidart\Modules\Facades\Module;
 use Oki\ModuleTest\Support\ScopedCoverageReport;
 use Oki\ModuleTest\Support\ScoreboardExport;
+use Symfony\Component\Finder\SplFileInfo;
 
 class ModuleTestCommand extends Command
 {
@@ -314,27 +315,6 @@ class ModuleTestCommand extends Command
             $modules->push($root);
         }
 
-        // A floor named for a module the run was never going to reach is a
-        // floor that cannot apply. Naming one in --mins is asking for that
-        // module, so it joins the targets rather than being left out of a run
-        // that then says nothing about it. Nothing to add where the caller
-        // named no targets: the run is already every module.
-        if ($asked->isNotEmpty()) {
-            $running = $modules->map(fn (string $module): string => Str::lower($module));
-
-            foreach (array_keys($floors) as $floor) {
-                if ($running->contains($floor)) {
-                    continue;
-                }
-
-                // The registry's own spelling, not the caller's: every target
-                // below is resolved to a path from it.
-                $modules->push($registered->first(
-                    fn (string $module): bool => Str::lower($module) === $floor,
-                ) ?? throw new LogicException("[{$floor}] was accepted as a floor but is in no registry."));
-            }
-        }
-
         if ($modules->isEmpty() && $given > 0) {
             $this->components->error('Nothing to test.');
 
@@ -354,6 +334,18 @@ class ModuleTestCommand extends Command
 
         if ($targets === null) {
             return self::FAILURE;
+        }
+
+        $targets = $this->shard($targets);
+
+        if ($targets === null) {
+            return self::FAILURE;
+        }
+
+        if ($targets->isEmpty()) {
+            $this->components->info("Nothing falls to shard {$this->text('shard')}.");
+
+            return self::SUCCESS;
         }
 
         $begun = microtime(true);
@@ -679,6 +671,151 @@ class ModuleTestCommand extends Command
         }
 
         return $exitCode;
+    }
+
+    /**
+     * The part of the run `--shard=index/total` gives this machine.
+     *
+     * The run is cut into `total` parts of about equal weight: each target,
+     * heaviest first, joins the part carrying least so far, and keeps its
+     * place in the run's order inside it. Every machine cuts the same run the
+     * same way, so the parts together are the whole run, each target once.
+     * A floor goes with its module whichever part that lands in.
+     *
+     * Answers the run untouched where no shard is asked for, and null where
+     * the shard or the durations cannot be read, having said so.
+     *
+     * @param  Collection<int, string>  $targets
+     * @return Collection<int, string>|null
+     */
+    private function shard(Collection $targets): ?Collection
+    {
+        $shard = $this->text('shard');
+
+        if ($shard === null) {
+            return $targets;
+        }
+
+        if (preg_match('/^(?<index>\d+)\/(?<total>\d+)$/', $shard, $found) !== 1
+            || (int) $found['index'] < 1
+            || (int) $found['index'] > (int) $found['total']) {
+            $this->components->error("A shard is written as index/total, as in 2/4 — [{$shard}] is not.");
+
+            return null;
+        }
+
+        $weights = $this->weights($targets);
+
+        if ($weights === null) {
+            return null;
+        }
+
+        // Weight, then how many it already holds, so targets that weigh
+        // nothing are still spread rather than piled into the first part.
+        $loads = array_fill(1, max(1, (int) $found['total']), [0.0, 0]);
+        $parts = [];
+
+        // Heaviest first, ties in run order, so the cut is the same on every machine.
+        $heaviest = collect($weights)->sortByDesc(fn (float $weight): float => $weight)->keys();
+
+        foreach ($heaviest as $offset) {
+            $lightest = (int) array_search(min($loads), $loads, true);
+            $loads[$lightest] = [$loads[$lightest][0] + $weights[$offset], $loads[$lightest][1] + 1];
+            $parts[$offset] = $lightest;
+        }
+
+        return $targets
+            ->filter(fn (string $target, int $offset): bool => $parts[$offset] === (int) $found['index'])
+            ->values();
+    }
+
+    /**
+     * What each target weighs, keyed by its place in the run.
+     *
+     * The seconds a previous `--export=….json` recorded for it, given
+     * `--durations`; otherwise its tests, counted, at the rate the recorded
+     * targets ran — one second apiece with nothing recorded.
+     *
+     * @param  Collection<int, string>  $targets
+     * @return array<int, float>|null
+     */
+    private function weights(Collection $targets): ?array
+    {
+        $recorded = $this->durations();
+
+        if ($recorded === null) {
+            return null;
+        }
+
+        $tests = $targets->map(fn (string $target): int => $this->testsIn($target));
+        $timed = $targets->filter(fn (string $target): bool => isset($recorded[Str::lower($target)]));
+        $timedTests = $timed->keys()->sum(fn (int $offset): int => $tests[$offset]);
+        $rate = $timedTests > 0
+            ? $timed->sum(fn (string $target): float => $recorded[Str::lower($target)]) / $timedTests
+            : 1.0;
+
+        return $targets
+            ->map(fn (string $target, int $offset): float => $recorded[Str::lower($target)] ?? $tests[$offset] * $rate)
+            ->all();
+    }
+
+    /**
+     * The seconds each module took, by lowercase name, out of the scoreboard
+     * `--durations` names. Empty where it names none; null where it cannot be
+     * read, having said so.
+     *
+     * @return array<string, float>|null
+     */
+    private function durations(): ?array
+    {
+        $named = $this->text('durations');
+
+        if ($named === null) {
+            return [];
+        }
+
+        $file = is_file($named) ? $named : base_path($named);
+
+        /** @var mixed $scoreboard */
+        $scoreboard = is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
+        $modules = is_array($scoreboard) ? ($scoreboard['modules'] ?? null) : null;
+
+        if (! is_array($modules)) {
+            $this->components->error("No scoreboard at [{$named}]. Point --durations at a file written by --export=….json.");
+
+            return null;
+        }
+
+        $seconds = [];
+
+        foreach ($modules as $module) {
+            if (is_array($module) && is_string($module['name'] ?? null) && is_numeric($module['seconds'] ?? null)) {
+                $seconds[Str::lower($module['name'])] = (float) $module['seconds'];
+            }
+        }
+
+        return $seconds;
+    }
+
+    /**
+     * How many tests a target holds: every `it(` or `test(` opening a line in
+     * its test files.
+     */
+    private function testsIn(string $target): int
+    {
+        $path = base_path($target === '' ? 'modules' : $this->resolveTarget($target));
+        $files = match (true) {
+            is_file($path) => [$path],
+            is_dir($path) => collect(File::allFiles($path))
+                ->filter(fn (SplFileInfo $file): bool => str_ends_with($file->getFilename(), 'Test.php'))
+                ->map(fn (SplFileInfo $file): string => $file->getPathname())
+                ->all(),
+            default => [],
+        };
+
+        return (int) collect($files)->sum(
+            fn (string $file): int => (int) preg_match_all('/^\s*(?:it|test)\(/m', (string) file_get_contents($file)),
+        );
     }
 
     /**
@@ -1146,6 +1283,8 @@ class ModuleTestCommand extends Command
             '{--to= : Stop after this module, given as its position in the run or its name}',
             '{--limit= : Run at most this many modules, counted from the start of the run (after --from/--to)}',
             '{--take= : The same as --limit}',
+            '{--shard= : Run one part of the run, as index/total — 2/4 is the second of four parts of about equal weight (after --from/--to/--limit)}',
+            '{--durations= : A scoreboard written by --export=….json, whose seconds weigh each module for --shard; without one, a module weighs as many tests as it holds}',
             '{--pick= : The same as --limit}',
             '{--artisan : Run via php artisan test instead of the pest binary}',
             '{--export= : Write the scoreboard to a file; the extension picks the format ('.implode(', ', ScoreboardExport::formats()).'), and either half of the name may be left off — on its own it writes module-test.json (implies --totals)}',

@@ -80,6 +80,8 @@ studly-cased.
 | `--sort=` | Order several modules run in: `asc` (default), `desc`, `none` |
 | `--from=`, `--to=` | Narrow the run to a window, both ends included; each end is a position in the run (`1` for the first) or a module name |
 | `--limit=`, `--take=`, `--pick=` | Run at most this many modules, counted from the start of the run the window left; three names for one option |
+| `--shard=` | Run one part of the run, as `index/total`: `2/4` is the second of four parts of about equal weight |
+| `--durations=` | A scoreboard written by `--export=….json`, whose seconds weigh each module for `--shard` |
 | `--export=` | Write the scoreboard to a file; the extension picks the format, and either half of the name may be left off (implies `--totals`) |
 | `--artisan` | Run `php artisan test` rather than `vendor/bin/pest` |
 | `-p` | Pest's `--parallel`. Use it by default |
@@ -156,11 +158,10 @@ and case does not matter. It applies wherever coverage is collected, scoreboard 
 asking for a floor is asking for coverage — `--mins` turns it on by itself, the same way
 `--min` does.
 
-**Naming a module in `--mins` puts it in the run.** `module:test -t --mins=Module:99.98 Auth`
-tests Auth and Module, because a floor on a module the run was never going to reach is a
-floor that cannot apply — and a run that says nothing about the module you set a floor for is
-the thing this option exists to prevent. Where no modules are named at all the run is already
-every module, so there is nothing to add.
+**A floor holds a module the run reaches, and adds nothing to it.** `module:test -t
+--mins=Module:99.98 Auth` tests Auth alone; Module's floor waits for a run that has it. So one
+floors file serves every run — the whole suite, a window, one part of a `--shard` — and each
+module carries its own floor into whichever of them it lands in.
 
 A name that is not a module here is refused, rather than quietly holding nothing to anything:
 a floor that silently never applies is worse than one that was never asked for. A value that
@@ -236,6 +237,24 @@ both ends included, each end given as a position in the run as it is about to go
 name of one of its modules — so a run interrupted at the ninth of thirty is picked back up
 with `--from=9`. An end naming nothing in the run fails rather than quietly running
 something else, and so does a window that closes before it opens.
+
+**A shard is one machine's part of the run.** `--shard=index/total` cuts the run into `total`
+parts of about equal weight and runs part `index`, so several machines given `1/4` … `4/4`
+cover the run between them, each module once. It is the run the other options left — the
+sort, the window, the limit — that is cut, and every machine cuts it the same way:
+
+```bash
+php artisan module:test -t --root --min=100 --mins=@coverage.txt --shard=2/4
+php artisan module:test -t --root --min=100 --shard=2/4 --durations=module-test.json
+```
+
+Each target, heaviest first, joins the part carrying least so far. A module weighs the
+seconds a previous `--export=….json` scoreboard recorded for it, given `--durations`, and
+otherwise as many tests as it holds — every `it(` or `test(` opening a line in its test
+files, at the rate the recorded modules ran. A floor goes with its module whichever part that
+is, so the parts together answer exactly what one run over everything would. A part with
+nothing in it says so and passes; a shard that is not `index/total`, with `index` from 1 to
+`total`, fails before anything runs.
 
 **Disabled modules are tested too.** A module is switched off in `modules.json` for what it
 does at runtime, which has nothing to do with whether its tests should still pass.

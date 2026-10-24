@@ -971,6 +971,115 @@ describe('--totals', function () {
 });
 
 // ---------------------------------------------------------------------------
+// --shard: one part of the run, for one of several machines
+// ---------------------------------------------------------------------------
+
+/**
+ * A test file holding the given number of tests, made for the test and
+ * removed with it.
+ */
+function tests_on_disk(string $file, int $count): void
+{
+    $path = base_path($file);
+
+    File::ensureDirectoryExists(dirname($path));
+    File::put($path, "<?php\n".str_repeat("it('passes', fn () => true);\n", $count));
+
+    test()->beforeApplicationDestroyed(fn () => File::delete($path));
+}
+
+describe('--shard', function () {
+    // Sorted ascending, the default registry runs Contact, Example, Sample.
+    beforeEach(function () {
+        $this->order = [];
+
+        $order = &$this->order;
+
+        Process::fake(function ($process) use (&$order) {
+            $order[] = end($process->command);
+
+            return Process::result();
+        });
+    });
+
+    it('cuts the run into parts that together hold every module once', function () {
+        $this->artisan('module:test', ['--shard' => '1/2'])->assertSuccessful();
+        $this->artisan('module:test', ['--shard' => '2/2'])->assertSuccessful();
+
+        expect($this->order)->toBe(['modules/Contact', 'modules/Sample', 'modules/Example']);
+    });
+
+    it('weighs a module by the tests it holds', function () {
+        tests_on_disk('modules/Sample/tests/Unit/HeavyTest.php', 5);
+
+        $this->artisan('module:test', ['--shard' => '1/2'])->assertSuccessful();
+
+        expect($this->order)->toBe(['modules/Sample']);
+    });
+
+    it('weighs a target named as a file by the tests in it', function () {
+        tests_on_disk('modules/Sample/tests/Unit/HeavyTest.php', 5);
+
+        $this->artisan('module:test', [
+            'modules' => ['Contact', 'Example', 'modules/Sample/tests/Unit/HeavyTest.php'],
+            '--shard' => '1/2',
+        ])->assertSuccessful();
+
+        expect($this->order)->toBe(['modules/Sample/tests/Unit/HeavyTest.php']);
+    });
+
+    it('weighs a module by the seconds a scoreboard recorded for it', function () {
+        tests_on_disk('modules/Sample/tests/Unit/HeavyTest.php', 5);
+        tests_on_disk('modules/Example/tests/Unit/LightTest.php', 1);
+
+        $scoreboard = base_path('durations-test.json');
+        File::put($scoreboard, json_encode(['modules' => [
+            ['name' => 'Example', 'seconds' => 600.0],
+            ['name' => 'Sample', 'seconds' => 10.0],
+            ['name' => 'Contact', 'seconds' => 'unknown'],
+        ]]));
+        test()->beforeApplicationDestroyed(fn () => File::delete($scoreboard));
+
+        $this->artisan('module:test', ['--shard' => '1/2', '--durations' => 'durations-test.json'])->assertSuccessful();
+
+        expect($this->order)->toBe(['modules/Example']);
+    });
+
+    it('takes its part of the window --limit leaves', function () {
+        $this->artisan('module:test', ['--limit' => '2', '--shard' => '2/2'])->assertSuccessful();
+
+        expect($this->order)->toBe(['modules/Example']);
+    });
+
+    it('says so and passes when nothing falls to its part', function () {
+        $this->artisan('module:test', ['--shard' => '4/4'])
+            ->expectsOutputToContain('Nothing falls to shard 4/4.')
+            ->assertSuccessful();
+
+        expect($this->order)->toBe([]);
+    });
+
+    it('refuses a shard it cannot read', function (string $shard) {
+        $this->artisan('module:test', ['--shard' => $shard])
+            ->expectsOutputToContain("A shard is written as index/total, as in 2/4 — [{$shard}] is not.")
+            ->assertFailed();
+
+        expect($this->order)->toBe([]);
+    })->with([
+        'no total' => ['2'],
+        'a part before the first' => ['0/2'],
+        'a part past the last' => ['3/2'],
+    ]);
+
+    it('refuses durations that are not a scoreboard', function () {
+        $this->artisan('module:test', ['--shard' => '1/2', '--durations' => 'nowhere.json'])
+            ->expectsOutputToContain('No scoreboard at [nowhere.json].')
+            ->assertFailed();
+
+        expect($this->order)->toBe([]);
+    });
+});
+// ---------------------------------------------------------------------------
 // --mins: a floor of a module's own, over the one --min gives the rest
 // ---------------------------------------------------------------------------
 
@@ -1026,13 +1135,13 @@ describe('--mins', function () {
         expect($said)->not->toContain('below the 10.00 % floor');
     });
 
-    it('runs a module named only in a floor, which nothing could hold to it otherwise', function () {
+    it('leaves out a module named only in a floor, the floor waiting for a run that has it', function () {
         Process::fake();
 
         $this->artisan('module:test', ['modules' => ['Contact'], '--mins' => ['Example:100']])->run();
 
         Process::assertRanTimes(fn ($process) => in_array('modules/Contact', $process->command, true), 1);
-        Process::assertRanTimes(fn ($process) => in_array('modules/Example', $process->command, true), 1);
+        Process::assertRanTimes(fn ($process) => in_array('modules/Example', $process->command, true), 0);
     });
 
     it('does not run a module twice for being named both ways', function () {
