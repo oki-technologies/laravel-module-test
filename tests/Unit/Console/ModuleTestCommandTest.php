@@ -968,6 +968,17 @@ describe('--totals', function () {
             ->toContain('running')
             ->toContain('100.00%');
     });
+
+    it('says a module is running as it starts, where the line cannot be taken back', function () {
+        child_writes_coverage('Example', [1 => 1]);
+
+        $buffer = new BufferedOutput;
+        Artisan::call('module:test', ['modules' => ['Example'], '--totals' => true], $buffer);
+        $said = $buffer->fetch();
+
+        expect($said)->not->toContain("\033[1A")
+            ->and(strpos($said, 'running'))->toBeLessThan(strpos($said, '100.00%'));
+    });
 });
 
 // ---------------------------------------------------------------------------
