@@ -41,16 +41,32 @@ afterEach(function () {
 
 describe('resolve()', function () {
     it('names an unnamed scoreboard and writes it as JSON', function () {
-        expect(ScoreboardExport::resolve(null))->toBe('module-test.json')
-            ->and(ScoreboardExport::resolve(' '))->toBe('module-test.json');
+        expect(ScoreboardExport::resolve(null))->toBe('coverage.json')
+            ->and(ScoreboardExport::resolve(' '))->toBe('coverage.json');
     });
 
     it('keeps the default name behind a bare extension', function () {
-        expect(ScoreboardExport::resolve('.png'))->toBe('module-test.png');
+        expect(ScoreboardExport::resolve('.png'))->toBe('coverage.png');
+    });
+
+    it('reads a bare format as the format rather than the name', function () {
+        expect(ScoreboardExport::resolve('json'))->toBe('coverage.json')
+            ->and(ScoreboardExport::resolve('csv'))->toBe('coverage.csv')
+            ->and(ScoreboardExport::resolve('md'))->toBe('coverage.md')
+            ->and(ScoreboardExport::resolve('PNG'))->toBe('coverage.png');
+    });
+
+    it('keeps the directory a bare format was given in', function () {
+        expect(ScoreboardExport::resolve('build/csv'))->toBe('build/coverage.csv');
     });
 
     it('writes a name with no extension as JSON', function () {
-        expect(ScoreboardExport::resolve('coverage'))->toBe('coverage.json');
+        expect(ScoreboardExport::resolve('coverage'))->toBe('coverage.json')
+            ->and(ScoreboardExport::resolve('scores'))->toBe('scores.json');
+    });
+
+    it('keeps a name that names its own format', function () {
+        expect(ScoreboardExport::resolve('coverage.md'))->toBe('coverage.md');
     });
 
     it('keeps the directory a name was given in', function () {

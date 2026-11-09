@@ -1291,7 +1291,7 @@ class ModuleTestCommand extends Command
             '{--durations= : A scoreboard written by --export=….json, whose seconds weigh each module for --shard; without one, a module weighs as many tests as it holds}',
             '{--pick= : The same as --limit}',
             '{--artisan : Run via php artisan test instead of the pest binary}',
-            '{--export= : Write the scoreboard to a file; the extension picks the format ('.implode(', ', ScoreboardExport::formats()).'), and either half of the name may be left off — on its own it writes module-test.json (implies --totals)}',
+            '{--export= : Write the scoreboard to a file; the extension picks the format ('.implode(', ', ScoreboardExport::formats()).'), and either half of the name may be left off — on its own it writes coverage.json (implies --totals)}',
         ];
 
         foreach (self::PEST_OPTIONS as $name => $acceptsValue) {
