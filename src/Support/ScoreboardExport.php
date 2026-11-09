@@ -26,7 +26,7 @@ use SplTempFileObject;
 class ScoreboardExport
 {
     /** What a scoreboard is called when the caller did not name it. */
-    private const string DEFAULT_NAME = 'module-test';
+    private const string DEFAULT_NAME = 'coverage';
 
     /** And what it is written as when the name says nothing about format. */
     private const string DEFAULT_FORMAT = 'json';
@@ -76,11 +76,12 @@ class ScoreboardExport
      * The file a `--export` value asks for.
      *
      * The option is there to be reached for in a hurry, so every half of the
-     * answer has a whole one behind it: nothing at all is `module-test.json`,
-     * a bare extension keeps that name and changes the format, and a name
-     * with no extension on it is written as JSON and says so. A file called
-     * `export`, with nothing to say what is in it, is what the caller has to
-     * open to find out.
+     * answer has a whole one behind it: nothing at all is `coverage.json`,
+     * a bare format keeps that name and changes the format — written with a
+     * dot or without, `.json` and `json` are the same ask — and a name with
+     * no format on it is written as JSON and says so. A file called `export`,
+     * with nothing to say what is in it, is what the caller has to open to
+     * find out.
      *
      * JSON is the default because an unnamed export is the one nobody chose a
      * format for: it is read back by whatever asked for it — a pipeline step,
@@ -98,6 +99,14 @@ class ScoreboardExport
         $directory = str_contains($file, '/') ? dirname($file).'/' : '';
         $name = pathinfo($file, PATHINFO_FILENAME);
         $extension = pathinfo($file, PATHINFO_EXTENSION);
+
+        // A name that is itself a format is the format half, not the name
+        // half: `--export=json` asks for the default name written as JSON,
+        // the same as `--export=.json` does.
+        if ($extension === '' && isset(self::FORMATS[Str::lower($name)])) {
+            $extension = Str::lower($name);
+            $name = '';
+        }
 
         return $directory
             .($name === '' ? self::DEFAULT_NAME : $name)

@@ -57,7 +57,7 @@ php artisan module:test -t --from=Tag --to=12     # picking a run back up where 
 php artisan module:test -t --from=Tag --limit=5  # or just the next five of them
 php artisan module:test -t --root                 # every module, and the root tests/ suite beside them
 php artisan module:test -t --root Root            # the root suite on its own
-php artisan module:test -p --export                # the same scoreboard, kept as module-test.json
+php artisan module:test -p --export                # the same scoreboard, kept as coverage.json
 php artisan module:test -p --export=coverage.png   # or as a picture of itself
 ```
 
@@ -245,7 +245,7 @@ sort, the window, the limit — that is cut, and every machine cuts it the same 
 
 ```bash
 php artisan module:test -t --root --min=100 --mins=@coverage.txt --shard=2/4
-php artisan module:test -t --root --min=100 --shard=2/4 --durations=module-test.json
+php artisan module:test -t --root --min=100 --shard=2/4 --durations=coverage.json
 ```
 
 Each target, heaviest first, joins the part carrying least so far. A module weighs the
@@ -310,9 +310,9 @@ The extension picks the format, and both halves of the name have a whole answer 
 
 | Written | Gets you |
 | --- | --- |
-| `--export` | `module-test.json` |
-| `--export=.csv` | `module-test.csv` |
-| `--export=coverage` | `coverage.json` |
+| `--export` | `coverage.json` |
+| `--export=csv` | `coverage.csv` (a bare format, with or without the dot) |
+| `--export=scores` | `scores.json` |
 | `--export=build/run.md` | that path, with the directory created if it is not there |
 
 **JSON is the default because an unnamed export is the one nobody chose a format for.** It
