@@ -66,9 +66,25 @@ it is roughly twice as quick — a module that takes two minutes serially takes 
 when you are chasing a failure whose output you want in order, or when the tests under it
 share something a parallel run would have two workers both own.
 
-A target is a module name, a path under `modules/` or `tests/`, or a file. A bare name is
-studly-cased into `modules/{Name}`; a `name/rest/of/path` has only its first segment
-studly-cased.
+A target is a module name, a path under the modules directory or `tests/`, or a file. A
+bare name is resolved to the module's own directory; a `name/rest/of/path` has only its
+first segment resolved.
+
+### Where the modules are
+
+`modules.paths.modules` says where, so an application keeping its modules under `plugins/`
+or `add-ons/` is run as it stands — targets resolve there, a run naming nothing tests every
+module there, and `--parallel` filters by `modules.namespace`:
+
+```bash
+php artisan module:test -p Auth          # plugins/Auth, where that is the configured directory
+php artisan module:test -p plugins/Auth  # the same module, named by its path
+```
+
+A module nwidart scanned from somewhere else — `modules.scan.paths`, a module installed as a
+package — is run where the registry says it is, under the name it is namespaced by rather
+than the directory it sits in. A module whose directory is there but whose entry in
+`modules.json` is not is found by the directory.
 
 | Option | What it does |
 | --- | --- |
@@ -175,7 +191,7 @@ it says the whole thing changed. A `--mins` value starting with `@` is a path in
 floor to a line:
 
 ```bash
-php artisan module:test -t --root --min=100 --mins=@coverage-floors.txt
+php artisan module:test -t --root --min=100 --mins=@coverage.txt
 ```
 
 ```
