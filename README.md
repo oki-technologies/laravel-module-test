@@ -191,7 +191,7 @@ it says the whole thing changed. A `--mins` value starting with `@` is a path in
 floor to a line:
 
 ```bash
-php artisan module:test -t --root --min=100 --mins=@coverage-floors.txt
+php artisan module:test -t --root --min=100 --mins=@coverage.txt
 ```
 
 ```
