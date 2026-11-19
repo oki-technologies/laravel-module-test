@@ -5,6 +5,7 @@ namespace Oki\ModuleTest\Console;
 use Illuminate\Console\Command;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
@@ -218,6 +219,13 @@ class ModuleTestCommand extends Command
     protected $description = 'Run tests, optionally with code coverage, for one or more modules';
 
     /**
+     * Every registered module, read once. See `modulePaths()`.
+     *
+     * @var array<string, array{name: string, path: string}>|null
+     */
+    private ?array $modulePaths = null;
+
+    /**
      * The name and signature of the console command.
      */
     public function __construct()
@@ -371,10 +379,10 @@ class ModuleTestCommand extends Command
             }
 
             $isRoot = $this->isRoot($module);
-            $path = $module ? $this->resolveTarget($module) : 'modules';
+            $path = $module ? $this->resolveTarget($module) : $this->modulesRoot();
             $label = match (true) {
                 $isRoot => (string) $root,
-                ! $module => 'Modules',
+                ! $module => Str::studly(basename($this->modulesRoot())),
                 str_contains($module, '/') => $path,
                 default => Str::studly($module),
             };
@@ -807,7 +815,7 @@ class ModuleTestCommand extends Command
      */
     private function testsIn(string $target): int
     {
-        $path = base_path($target === '' ? 'modules' : $this->resolveTarget($target));
+        $path = $this->projectPath($target === '' ? $this->modulesRoot() : $this->resolveTarget($target));
         $files = match (true) {
             is_file($path) => [$path],
             is_dir($path) => collect(File::allFiles($path))
@@ -1012,7 +1020,7 @@ class ModuleTestCommand extends Command
         }
 
         return $known->contains(Str::lower($module))
-            || file_exists(base_path($this->resolveTarget($module)));
+            || file_exists($this->projectPath($this->resolveTarget($module)));
     }
 
     /**
@@ -1339,8 +1347,13 @@ class ModuleTestCommand extends Command
     /**
      * Resolve a module name, module-relative path, or literal path/file into a
      * path Pest can run: "Person" -> "modules/Person", "Person/tests/Unit/FooTest.php"
-     * -> "modules/Person/tests/Unit/FooTest.php". A value already rooted at "modules/"
-     * or "tests/", or an existing file relative to the project, passes through unchanged.
+     * -> "modules/Person/tests/Unit/FooTest.php". A value already rooted at the
+     * modules directory or "tests/", or an existing file relative to the
+     * project, passes through unchanged.
+     *
+     * Where the modules directory is is `modules.paths.modules`, so an
+     * application keeping its modules under `plugins/` or `add-ons/` resolves
+     * to those. See `modulesRoot()`.
      */
     private function resolveTarget(string $module): string
     {
@@ -1348,21 +1361,73 @@ class ModuleTestCommand extends Command
             return self::ROOT_TESTS;
         }
 
-        if (str_starts_with($module, 'modules/') || str_starts_with($module, 'tests/') || file_exists(base_path($module))) {
+        $root = $this->modulesRoot();
+
+        if (str_starts_with($module, $root.'/')
+            || str_starts_with($module, self::ROOT_TESTS.'/')
+            || file_exists($this->projectPath($module))) {
             return $module;
         }
 
         if (! str_contains($module, '/')) {
-            return 'modules/'.$this->moduleDirectory($module);
+            return $this->modulePath($module);
         }
 
         [$moduleName, $rest] = explode('/', $module, 2);
 
-        return 'modules/'.$this->moduleDirectory($moduleName).'/'.$rest;
+        return $this->modulePath($moduleName).'/'.$rest;
     }
 
     /**
-     * The module's directory as it is spelled on disk.
+     * The modules directory, relative to the project — "modules" for a default
+     * installation, whatever `modules.paths.modules` says for anything else.
+     * A directory outside the project keeps its absolute path, which every
+     * path here is joined with through `projectPath()`.
+     */
+    private function modulesRoot(): string
+    {
+        /** @var mixed $configured */
+        $configured = Config::get('modules.paths.modules');
+
+        return $this->relativeToProject(is_string($configured) && $configured !== '' ? $configured : base_path('modules'));
+    }
+
+    /** The namespace a module's classes are under: `modules.namespace`. */
+    private function modulesNamespace(): string
+    {
+        /** @var mixed $namespace */
+        $namespace = Config::get('modules.namespace');
+
+        return is_string($namespace) && $namespace !== '' ? trim($namespace, '\\') : 'Modules';
+    }
+
+    /**
+     * Every registered module — the name it is namespaced under and the
+     * directory it is in, relative to the project — keyed by its lower-cased
+     * name.
+     *
+     * The registry rather than the modules directory, because nwidart also
+     * scans `modules.scan.paths` — a module installed as a package sits
+     * somewhere else entirely, under a directory that need not be spelled like
+     * its name, and only the registry knows either.
+     *
+     * @return array<string, array{name: string, path: string}>
+     */
+    private function modulePaths(): array
+    {
+        return $this->modulePaths ??= collect(Module::all())
+            ->mapWithKeys(fn ($module): array => [
+                Str::lower((string) $module->getName()) => [
+                    'name' => (string) $module->getName(),
+                    'path' => $this->relativeToProject((string) $module->getPath()),
+                ],
+            ])
+            ->all();
+    }
+
+    /**
+     * Where a module's directory is, relative to the project — the registry's
+     * answer where it has one, the modules directory otherwise.
      *
      * `Str::studly()` alone turns "mailcode" into "Mailcode", which is a
      * different directory from "MailCode". A case-insensitive filesystem still
@@ -1375,21 +1440,80 @@ class ModuleTestCommand extends Command
      * keeps a lowercase argument working and keeps the answer identical on a
      * case-sensitive filesystem.
      */
-    private function moduleDirectory(string $module): string
+    private function modulePath(string $module): string
     {
+        $registered = $this->modulePaths()[Str::lower($module)]['path'] ?? null;
+
+        // Only where it is actually there: a name registered without a
+        // directory — one listed in `modules.json` and since deleted — is
+        // given a path nwidart composed out of the name, which carries the
+        // caller's spelling rather than any on disk.
+        if ($registered !== null && is_dir($this->projectPath($registered))) {
+            return $registered;
+        }
+
+        $root = $this->modulesRoot();
+
         // Scanned rather than tested with is_dir(): on a case-insensitive
         // filesystem is_dir('modules/Mailcode') answers true for the directory
         // actually named "MailCode", so the wrong spelling would pass straight
-        // through. Only the name the scan reports is the one on disk.
-        foreach ((glob(base_path('modules/*'), GLOB_ONLYDIR) ?: []) as $directory) {
+        // through. Only the name the scan reports is the one on disk. A module
+        // whose directory is there but whose entry in `modules.json` is not is
+        // found here too, having no registry to be found in.
+        foreach ((glob($this->projectPath($root).'/*', GLOB_ONLYDIR) ?: []) as $directory) {
             $name = basename($directory);
 
             if (strcasecmp($name, $module) === 0) {
-                return $name;
+                return $root.'/'.$name;
             }
         }
 
-        return Str::studly($module);
+        return $root.'/'.Str::studly($module);
+    }
+
+    /**
+     * A path as the module's namespace spells it: the module's name, then
+     * whatever of it was named — "Person", "Person/tests/Unit/FooTest.php".
+     */
+    private function withoutModulesRoot(string $path): string
+    {
+        // The registry first: a module is namespaced under its name, which a
+        // directory it was scanned from somewhere else need not be spelled
+        // like.
+        foreach ($this->modulePaths() as $module) {
+            if ($path === $module['path'] || str_starts_with($path, $module['path'].'/')) {
+                return $module['name'].substr($path, strlen($module['path']));
+            }
+        }
+
+        $root = $this->modulesRoot();
+
+        return str_starts_with($path, $root.'/') ? substr($path, strlen($root) + 1) : $path;
+    }
+
+    /** A project-relative path made absolute; one already absolute left alone. */
+    private function projectPath(string $path): string
+    {
+        return $this->isAbsolute($path) ? $path : base_path($path);
+    }
+
+    /**
+     * A path as the project sees it: relative to the project root where it is
+     * under it, absolute where it is not. Separators are forward slashes
+     * either way, since every path here is compared against one.
+     */
+    private function relativeToProject(string $path): string
+    {
+        $path = rtrim(str_replace('\\', '/', $path), '/');
+        $root = rtrim(str_replace('\\', '/', base_path()), '/').'/';
+
+        return str_starts_with($path, $root) ? substr($path, strlen($root)) : $path;
+    }
+
+    /** Whether a path names where it is from the filesystem root rather than the project. */
+    private function isAbsolute(string $path): bool
+    {
+        return str_starts_with($path, '/') || (bool) preg_match('/^[A-Za-z]:[\\\\\/]/', $path);
     }
 
     /**
@@ -1402,8 +1526,8 @@ class ModuleTestCommand extends Command
     {
         $root = $path === self::ROOT_TESTS || str_starts_with($path, self::ROOT_TESTS.'/');
 
-        $namespaced = Str::of($path)
-            ->replaceFirst($root ? self::ROOT_TESTS : 'modules', $root ? 'Tests' : 'Modules')
+        $namespaced = Str::of($root ? $path : $this->modulesNamespace().'/'.$this->withoutModulesRoot($path))
+            ->when($root, fn ($str) => $str->replaceFirst(self::ROOT_TESTS, 'Tests'))
             ->when(str_ends_with($path, '.php'), fn ($str) => $str->substr(0, -4))
             ->replace('/', '\\');
 

@@ -18,6 +18,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 | would move with every module the service adds or renames. `$this->registry`
 | is read at the moment the command asks, so a test wanting a different one
 | rewrites it rather than mocking the facade a second time.
+|
+| An entry is a name, whose directory is the configured modules directory, or
+| `name => path` for one nwidart scanned from somewhere else.
 */
 beforeEach(function () {
     $this->registry = new ArrayObject(['Example', 'Sample', 'Contact']);
@@ -25,9 +28,13 @@ beforeEach(function () {
     $registry = $this->registry;
 
     Module::partialMock()->shouldReceive('all')->andReturnUsing(fn (): array => collect($registry->getArrayCopy())
-        ->mapWithKeys(fn (string $name): array => [
-            $name => new NwidartModule(app(), $name, base_path("modules/{$name}")),
-        ])
+        ->mapWithKeys(function (string $value, string|int $key): array {
+            [$name, $path] = is_int($key)
+                ? [$value, config('modules.paths.modules').'/'.$value]
+                : [$key, base_path($value)];
+
+            return [$name => new NwidartModule(app(), $name, $path)];
+        })
         ->all());
 });
 
@@ -50,6 +57,22 @@ function module_directory_named(string $name): void
     File::makeDirectory($path);
 
     test()->beforeApplicationDestroyed(fn () => File::deleteDirectory($path));
+}
+
+/**
+ * A directory made for the test and removed with it, named from the project
+ * root: a modules directory somewhere other than `modules`, or a module that
+ * was scanned from outside one.
+ */
+function directory_named(string $path): void
+{
+    if (File::isDirectory($full = base_path($path))) {
+        return;
+    }
+
+    File::makeDirectory($full, 0755, true);
+
+    test()->beforeApplicationDestroyed(fn () => File::deleteDirectory($full));
 }
 
 /**
@@ -318,6 +341,153 @@ describe('target resolution', function () {
 
         Process::assertRanTimes(fn () => true, 1);
         Process::assertRan(fn ($process) => end($process->command) === 'modules');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// A modules directory somewhere other than modules/ (modules.paths.modules)
+// ---------------------------------------------------------------------------
+
+describe('a relocated modules directory', function () {
+    beforeEach(function () {
+        directory_named('plugins/Example');
+
+        config(['modules.paths.modules' => base_path('plugins')]);
+    });
+
+    it('resolves a bare module name under the configured directory', function () {
+        Process::fake();
+
+        $this->artisan('module:test', ['modules' => ['example']])->assertSuccessful();
+
+        Process::assertRan(fn ($process) => end($process->command) === 'plugins/Example');
+    });
+
+    it('resolves a module-relative subpath under it', function () {
+        Process::fake();
+
+        $this->artisan('module:test', ['modules' => ['example/tests/Unit']])->assertSuccessful();
+
+        Process::assertRan(fn ($process) => end($process->command) === 'plugins/Example/tests/Unit');
+    });
+
+    it('passes a path already rooted at it through unchanged', function () {
+        Process::fake();
+
+        $target = 'plugins/Example/tests/Unit/ExampleTest.php';
+
+        $this->artisan('module:test', ['modules' => [$target]])->assertSuccessful();
+
+        Process::assertRan(fn ($process) => end($process->command) === $target);
+    });
+
+    it('runs the configured directory, under its own name, when nothing is registered', function () {
+        Process::fake();
+
+        $this->registry->exchangeArray([]);
+
+        $this->artisan('module:test')
+            ->assertSuccessful()
+            ->expectsOutputToContain('Testing Plugins');
+
+        Process::assertRan(fn ($process) => end($process->command) === 'plugins');
+    });
+
+    it('finds a module the registry does not have by the directory it is in', function () {
+        // Its entry in modules.json is gone; its directory is not. The scan
+        // of the configured directory is what answers for it.
+        Process::fake();
+
+        directory_named('plugins/MailCode');
+
+        $this->registry->exchangeArray([]);
+
+        $this->artisan('module:test', ['modules' => ['mailcode']])->assertSuccessful();
+
+        Process::assertRan(fn ($process) => end($process->command) === 'plugins/MailCode');
+    });
+
+    it('filters a parallel run by the configured namespace', function () {
+        Process::fake();
+
+        config(['modules.namespace' => 'Plugins']);
+
+        $this->artisan('module:test', ['modules' => ['Example'], '--parallel' => true])->assertSuccessful();
+
+        Process::assertRan(function ($process) {
+            $filter = Arr::first($process->command, fn ($token) => str_starts_with((string) $token, '--filter='));
+
+            return $filter === '--filter=/'.preg_quote('Plugins\\Example', '/').'/'
+                && ! in_array('plugins/Example', $process->command, true);
+        });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// A module nwidart scanned from outside the modules directory
+// ---------------------------------------------------------------------------
+
+describe('a module outside the modules directory', function () {
+    beforeEach(function () {
+        directory_named('vendor/acme/widget');
+
+        $this->registry->exchangeArray(['Widget' => 'vendor/acme/widget']);
+    });
+
+    it('runs it where the registry says it is', function () {
+        Process::fake();
+
+        $this->artisan('module:test', ['modules' => ['widget']])->assertSuccessful();
+
+        Process::assertRan(fn ($process) => end($process->command) === 'vendor/acme/widget');
+    });
+
+    it('filters a path the registry does not know by the module directory it is under', function () {
+        // Its directory is in the modules directory; its entry in modules.json
+        // is not. The modules directory is what names it.
+        Process::fake();
+
+        module_directory_named('MailCode');
+
+        $this->registry->exchangeArray([]);
+
+        $this->artisan('module:test', ['modules' => ['mailcode'], '--parallel' => true])->assertSuccessful();
+
+        Process::assertRan(function ($process) {
+            $filter = Arr::first($process->command, fn ($token) => str_starts_with((string) $token, '--filter='));
+
+            return $filter === '--filter=/'.preg_quote('Modules\\MailCode', '/').'/';
+        });
+    });
+
+    it('filters a path under neither the modules directory nor any module by the path itself', function () {
+        // Nothing says what it is namespaced under, so the filter says what
+        // was asked for and the run reports what it matched.
+        Process::fake();
+
+        directory_named('workbench/app');
+
+        $this->registry->exchangeArray([]);
+
+        $this->artisan('module:test', ['modules' => ['workbench/app'], '--parallel' => true])->assertSuccessful();
+
+        Process::assertRan(function ($process) {
+            $filter = Arr::first($process->command, fn ($token) => str_starts_with((string) $token, '--filter='));
+
+            return $filter === '--filter=/'.preg_quote('Modules\\workbench\\app', '/').'/';
+        });
+    });
+
+    it('filters a parallel run by its namespace, not by where it sits', function () {
+        Process::fake();
+
+        $this->artisan('module:test', ['modules' => ['Widget'], '--parallel' => true])->assertSuccessful();
+
+        Process::assertRan(function ($process) {
+            $filter = Arr::first($process->command, fn ($token) => str_starts_with((string) $token, '--filter='));
+
+            return $filter === '--filter=/'.preg_quote('Modules\\Widget', '/').'/';
+        });
     });
 });
 

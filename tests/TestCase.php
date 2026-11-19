@@ -27,6 +27,16 @@ abstract class TestCase extends Orchestra
         }
     }
 
+    /**
+     * Where the modules are. Testbench loads nwidart's own default, which is
+     * `Modules` — the fixtures here, like the applications this runs in, keep
+     * them under `modules`.
+     */
+    protected function defineEnvironment($app): void
+    {
+        $app['config']->set('modules.paths.modules', base_path('modules'));
+    }
+
     protected function getPackageProviders($app): array
     {
         return [LaravelModulesServiceProvider::class, ModuleTestServiceProvider::class];
